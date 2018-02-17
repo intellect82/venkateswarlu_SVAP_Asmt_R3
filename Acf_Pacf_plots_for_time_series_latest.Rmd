@@ -1,0 +1,461 @@
+---
+title: "R Notebook"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+```{r}
+library(fst)
+library(zoo)
+library(lubridate)
+library(dplyr)
+library(data.table)
+library(forecast)
+library(TSA)
+gc()
+
+```
+
+
+
+```{r}
+str(df_ts_1)
+# detect seasonality in data using periodogram
+p <- periodogram(df_ts_1$pickups[1:8400])
+data.table(period=1/p$freq, spec=p$spec)[order(-spec)][1:10]
+```
+
+
+
+```{r}
+
+
+# working on weekly seasonality
+library(forecast)
+count_ma_24 = msts(df_ts_1$pickups,seasonal.periods = c(24))
+#count_ma
+decomp = stl(count_ma_24, s.window = "periodic")
+deseasonal_cnt <- seasadj(decomp)
+plot(decomp)
+#plot(deseasonal_cnt)
+
+count_ma_48 = msts(df_ts_1$pickups,seasonal.periods = c(48))
+#count_ma
+decomp = stl(count_ma_48, s.window = "periodic")
+deseasonal_cnt <- seasadj(decomp)
+plot(decomp)
+#plot(deseasonal_cnt)
+
+
+
+count_ma_336 = msts(df_ts_1$pickups,seasonal.periods = c(336))
+#count_ma
+decomp = stl(count_ma_336, s.window = "periodic")
+deseasonal_cnt <- seasadj(decomp)
+plot(decomp)
+#plot(deseasonal_cnt)
+```
+
+
+
+```{r}
+#################################### Dickey Fuller Test for stationaritity
+
+###### check for lag of 48 - daily seasonality 
+#adf.test(log(count_ma_24),alternative = "stationary", k = 24)
+
+###### check for lag of 48 - daily seasonality 
+adf.test( log(count_ma_48),alternative = "stationary", k = 48)
+
+###### check for lag of 336 - daily seasonality 
+adf.test(log(count_ma_336),alternative = "stationary", k = 336)
+
+###### check for lag of 336 differenced - daily seasonality 
+diff_count_ma_336 = diff(count_ma_336,1)
+adf.test(diff_count_ma_336,alternative = "stationary",k=336)
+
+
+# Series is stationary for daily seasonality (k = 48)
+# series is not stationary for weekly seasonality (k= 336) and thus requires 1sr order differencing
+
+
+```
+
+
+
+```{r}
+count_ma = df_ts_1$pickups[1:8064]
+y = ts(df_ts_1$pickups[336:8064], frequency = 48)
+####################################### Look for half horly seasonality ########################
+
+#diff24 = diff(count_ma,24)
+#plot(diff24)
+############ to identify non seasonal tems
+#acf(diff24, lag.max = 20)
+#pacf(diff24,lag.max = 20)
+
+################## to identify seasonal terms
+
+#acf(diff24,lag.max = 200)
+#pacf(diff24,lag.max = 200)
+
+############## identified (p,d,q) = (3,0,11) or (5,0,11) and (P,D,Q) = (10,1,8)
+
+####################################### Look for daily seasonality ########################
+
+diff48 = diff(y,48)
+#plot(diff48)
+acf(y)
+pacf(y)
+acf(diff48, lag.max = 500)
+pacf(diff48,lag.max = 500)
+
+################## to identify seasonal terms
+
+acf(diff48,lag.max = 200)
+pacf(diff48,lag.max = 200)
+
+
+############## identified (p,d,q) = (3,0,10) and (P,D,Q) = (7,1,3) or (7,1,1)
+
+
+####################################### Look for daily seasonality ########################
+
+
+
+diff336 = diff(count_ma,336)
+plot(diff336)
+acf(diff336, lag.max = 20)
+pacf(diff336,lag.max = 20)
+
+################## to identify seasonal terms
+
+acf(diff336,lag.max = 1000)
+pacf(diff336,lag.max = 1000)
+
+############## identified (p,d,q) = (1,1,1) and (P,D,Q) = (2,1,3)
+
+
+```
+
+
+```{r}
+train = count_ma[1:7728]
+test = count_ma[7729:8064]
+
+plot(train,type='l')
+plot(test,type='l')
+```
+
+
+
+
+
+
+
+
+
+```{r}
+############################## fit ARIMA Model 
+
+#fitma_24 = arima(count_ma,order = c(3,0,11),seasonal = list(order = c(10,1,8)))
+
+#fitma_24 = auto.arima(train)
+#fitma_24
+
+
+############# identified (p,d,q) = (3,0,10) and (P,D,Q) = (7,1,3) or (7,1,1)
+
+y = ts(df_ts_1$pickups[336:8064], frequency = 48)
+
+
+#arima_model_48 = auto.arima(y)
+#arima_model_48
+gc()
+arima_48_model = arima(y,order = c(7,0,0),seasonal = list(order = c(7,0,0)))
+arima_48_model
+#library(astsa)
+#? sarima
+#sarima(y,5,0,5,7,1,3,48)
+#res <- residuals(fitma_24)
+#plot(res)
+
+
+forecast_all = forecast(arima_model_48, h=48)
+#forecast_all$mean
+forecasted_df = as.data.frame(cbind(forecast_all$mean[1:48],df_ts_1$pickups[8065:8112]))
+
+forecasted_df$diff = abs(forecasted_df$V1 - forecasted_df$V2)
+forecasted_df
+
+
+mape = mean(forecasted_df$diff/forecasted_df$V2)
+mape
+```
+
+
+
+```{r}
+############################## fit ARIMA Model 
+gc()
+#fitma_24 = arima(count_ma,order = c(3,0,11),seasonal = list(order = c(10,1,8)))
+
+fitma_24 = auto.arima(count_ma_24[1:6720])
+fitma_24
+
+res <- residuals(fitma_24)
+plot(res)
+
+
+forecast_all = forecast(fitma_24, h=48)
+#forecast_all$mean
+forecasted_df = as.data.frame(cbind(forecast_all$mean,count_ma_24[6721:6768]))
+
+forecasted_df$diff = abs(forecasted_df$`count_ma_24[6721:6768]` - forecasted_df$`forecast_all$mean`)
+forecasted_df
+
+
+mape = mean(forecasted_df$diff)/mean(forecasted_df$`count_ma_24[6721:6768]`) * 100
+mape
+```
+
+
+
+
+
+```{r}
+gc()
+#fitma_24 = arima(count_ma,order = c(3,0,11),seasonal = list(order = c(10,1,8)))
+library(forecast)
+fitma_48 = auto.arima(y)
+fitma_48
+
+res <- residuals(fitma_48)
+plot(res)
+
+
+forecast_48 = forecast(fitma_48, h=96)
+#forecast_all$mean
+forecasted_df = as.data.frame(cbind(forecast_48$mean,df_ts_1$pickups[8065:8160]))
+
+mean(abs(forecasted_df$`df_ts_1$pickups[8065:8160]` - forecasted_df$`forecast_48$mean`)/forecasted_df$`df_ts_1$pickups[8065:8160]`)
+
+forecast_df
+```
+
+
+
+
+```{r}
+
+gc()
+#fitma_24 = arima(count_ma,order = c(3,0,11),seasonal = list(order = c(10,1,8)))
+
+fitma_336 = auto.arima(count_ma_336[1:6720])
+fitma_336
+
+res <- residuals(fitma_336)
+plot(res)
+
+
+forecast_all = forecast(fitma_336, h=48)
+#forecast_all$mean
+forecasted_df = as.data.frame(cbind(forecast_all$mean,count_ma_336[6721:6768]))
+
+forecasted_df$diff = abs(forecasted_df$`count_ma_336[6721:6768]` - forecasted_df$`forecast_all$mean`)
+forecasted_df
+
+
+mape = mean(forecasted_df$diff)/mean(forecasted_df$`count_ma_336[6721:6768]`) * 100
+mape
+```
+
+
+
+
+```{r}
+
+############################### arima with fourier terms n = 336 ################
+bestfit = list()
+
+
+y = ts(count_ma[1:7728], frequency = 336)
+for(i in 1:5)
+{
+    
+    z1 <- fourier(y,K=i)
+    fit <- auto.arima(y, xreg=z1, seasonal=F)
+    if(i == 1)
+    {
+      bestfit <- list(aicc=fit$aicc, i=i, fit=fit)
+    }
+    if(fit$aicc < bestfit$aicc)
+    {
+      bestfit <- list(aicc=fit$aicc, i=i, fit=fit)
+    }
+  
+}
+
+############### iteration 2 has lowest aicc value 
+bestfit
+z1 <- fourier(y,K=4)
+fit <- auto.arima(y, xreg=z1, seasonal=F)
+
+#fc <- forecast(bestfit$fit, xreg=fourier(y,K=bestfit$i), h=336)
+fc <- forecast(fit, xreg=fourier(y,K=4), h=336)
+fc$mean
+
+result_comp = as.data.frame(cbind(fc$mean[1:336],count_ma_336[7729:8064])) 
+colnames(result_comp) = c("forecast","actual")
+result_comp$diff = abs(result_comp$forecast - result_comp$actual)
+result_comp
+
+MAPE_mult = sum(result_comp$diff)/sum(result_comp$actual) * 100 
+print(MAPE_mult)
+
+
+
+```
+
+
+
+
+```{r}
+
+
+############################### arima with fourier terms n = 48 ################
+bestfit = list()
+
+
+y = ts(count_ma[1:7728], frequency = 48)
+for(i in 1:10)
+{
+    
+    z1 <- fourier(y,K=i)
+    fit <- auto.arima(y, xreg=z1, seasonal=F)
+    if(i == 1)
+    {
+      bestfit <- list(aicc=fit$aicc, i=i, fit=fit)
+    }
+    if(fit$aicc < bestfit$aicc)
+    {
+      bestfit <- list(aicc=fit$aicc, i=i, fit=fit)
+    }
+  
+}
+
+############### iteration 4 has lowest aicc value 
+bestfit
+z1 <- fourier(y,K=8)
+fit <- auto.arima(y, xreg=z1, seasonal=F)
+fit
+#fc <- forecast(bestfit$fit, xreg=fourier(y,K=bestfit$i), h=336)
+fc <- forecast(fit, xreg=fourier(y,K=8), h=336)
+fc$mean
+
+result_comp = as.data.frame(cbind(fc$mean[1:336],count_ma[7729:8064])) 
+colnames(result_comp) = c("forecast","actual")
+result_comp$diff = abs(result_comp$forecast - result_comp$actual)
+#result_comp
+
+MAPE_mult = sum(result_comp$diff)/sum(result_comp$actual) * 100 
+print(MAPE_mult)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+########################################## HW additive Model ###############################################
+y = ts(count_ma[1:7728], frequency = 336)
+hw_model = HoltWinters(y,seasonal = "additive",start.periods = 336)
+#hw_model = HoltWinters(count_ma, seasonal = "mult",optim.start = c(.3,.1,.1))
+hw_model$alpha
+hw_model$beta
+hw_model$gamma
+
+plot(hw_model)
+forecast <- predict(hw_model, n.ahead = 336, prediction.interval = T, level = 0.95)
+plot(hw_model, forecast)
+
+result_comp = as.data.frame(cbind(forecast[,1],count_ma[7729:8064])) 
+colnames(result_comp) = c("forecast","actual")
+result_comp$diff = abs(result_comp$forecast - result_comp$actual)
+
+APE_add = sum(result_comp$diff)/sum(result_comp$actual) * 100 
+print(APE_add)
+
+mean(result_comp$diff/result_comp$actual)
+
+print(result_comp$forecast)
+result_comp
+
+plot(result_comp$diff,type = "l")
+```
+
+
+
+
+```{r}
+########################################## HW additive Model ###############################################
+y = ts(count_ma[1:7728], frequency = 48)
+hw_model = HoltWinters(y,seasonal = "additive",start.periods = 48)
+#hw_model = HoltWinters(count_ma, seasonal = "mult",optim.start = c(.3,.1,.1))
+hw_model$alpha
+hw_model$beta
+hw_model$gamma
+
+plot(hw_model)
+forecast <- predict(hw_model, n.ahead = 336, prediction.interval = T, level = 0.95)
+plot(hw_model, forecast)
+
+result_comp = as.data.frame(cbind(forecast[,1],count_ma_48[6049:6384])) 
+colnames(result_comp) = c("forecast","actual")
+result_comp$diff = abs(result_comp$forecast - result_comp$actual)
+
+MAPE_add = sum(result_comp$diff)/sum(result_comp$actual) * 100 
+print(MAPE_add)
+
+plot(result_comp$diff,type = "l")
+```
+
+```{r}
+gc()
+train_tbat = msts(temp_df_1$pickups[1:7728],seasonal.periods = c(48,336))
+test_tbat = msts(temp_df_1$pickups[7729:8064],seasonal.periods = c(48,336))
+
+
+tbat_model = tbats(train_tbat,seasonal.periods = c(48,336))
+
+tbat_forecast = forecast(tbat_model)
+plot(tbat_forecast$mean)
+result_comp_tabt = as.data.frame(cbind(tbat_forecast$mean[1:336],temp_df_1$pickups[7729:8064])) 
+colnames(result_comp_tabt) = c("forecast","actual")
+result_comp_tabt$diff = abs(result_comp_tabt$forecast - result_comp_tabt$actual)
+
+result_comp_tabt
+MAPE_mult = sum(result_comp_tabt$diff)/sum(result_comp_tabt$actual) * 100 
+print(MAPE_mult)
+
+```
+

@@ -1,0 +1,1046 @@
+---
+title: "R Notebook"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+library(fst)
+library(zoo)
+library(lubridate)
+library(dplyr)
+library(data.table)
+gc()
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+```{r}
+
+
+
+gc()
+#dat <- fread("D:/GL_Capstone_Proj/yellow_tripdata_2015-01-06.csv",select = c("tpep_pickup_datetime","pickup_longitude","pickup_latitude"))
+dat <- fread("D:/GL_Capstone_Proj/yellow_tripdata_2015-01-06.csv",select = c("tpep_pickup_datetime"))
+
+
+gc()
+str(dat)
+
+#library(fst)
+#write.fst(dat,"D:/GL_Capstone_Proj/yellow_tripdata_full.fst")
+
+gc()
+dat$datetime = ymd_hms(dat$tpep_pickup_datetime)
+max(dat$datetime)
+
+str(dat)
+```
+
+
+```{r}
+#str(taxi_data)
+gc()
+fun <- function(x){
+    quantiles <- quantile( x, c(.05, .95 ) )
+    x[ x < quantiles[1] ] <- quantiles[1]
+    x[ x > quantiles[2] ] <- quantiles[2]
+    return(x)
+}
+
+dat$pickup_longitude = fun(dat$pickup_longitude)
+dat$pickup_latitude = fun(dat$pickup_latitude)
+
+#taxi_data$dropoff_latitude = fun(taxi_data$dropoff_latitude)
+#taxi_data$dropoff_longitude = fun(taxi_data$dropoff_longitude)
+#head(taxi_data)
+
+dat$pickup_longitude = round(dat$pickup_longitude,digits = 3)
+#dat$dropoff_longitude = round(dat$dropoff_longitude, digits = 2)
+
+dat$pickup_latitude = round(dat$pickup_latitude,digits = 3)
+#dat$dropoff_latitude = round(dat$dropoff_latitude, digits = 2)
+ 
+##head(taxi_data)
+gc()
+dat
+
+dat$location = paste(dat$pickup_latitude,dat$pickup_longitude,sep = "")
+
+#dat = dat[,c(1,4)]
+gc()
+X = NULL
+X = dat %>% group_by(pickup_longitude,pickup_latitude,datetime) %>% summarise(count = n()) 
+X
+
+dat = NULL
+gc()
+temp_df = X %>% group_by(pickup_longitude,pickup_latitude) %>% mutate(interval = floor_date(datetime, unit="30 minutes")) %>% group_by(interval) %>% mutate(sum_val = sum(count)) %>% select(pickup_longitude, pickup_latitude,interval, sum_val)
+
+?floor_date
+
+temp_df
+X = NULL
+gc()
+temp_df_1 = temp_df %>% distinct(pickup_longitude,pickup_latitude,interval,.keep_all = TRUE)
+
+
+temp_df = NULL
+gc()
+str(temp_df_1)
+temp_df_1$pickup_longitude = round(temp_df_1$pickup_longitude,digits = 3)
+#dat$dropoff_longitude = round(dat$dropoff_longitude, digits = 2)
+
+temp_df_1$pickup_latitude = round(temp_df_1$pickup_latitude,digits = 3)
+temp_df_1
+
+temp_df_2 <- temp_df_1 %>% group_by(pickup_longitude,pickup_latitude,interval) %>% summarise(pickups = sum(sum_val))
+
+
+temp_df_2
+```
+
+
+
+```{r}
+df_loc = dat %>% group_by(location) %>% summarise(no = n()) %>% arrange(desc(no))
+df_loc
+#df_loc[12,1]
+for(i in 1:nrow(df_loc))
+{
+  print(i)
+  name <- paste("df", i, sep = "_")
+  var = df_loc$location[i]
+  assign(name,as.data.frame(dat %>% filter(location == var)))
+  gc()
+}
+gc()
+```
+
+
+```{r}
+df_list = NULL
+
+df_list<-list()
+
+for (j in 1:4)
+{
+  z <- j
+  sEOG <- paste("df_", z, sep="")
+  dEOG <- get(paste("df_", z, sep=""))
+  df_list[[sEOG]] <-dEOG
+}
+
+gc()
+
+# function to produce half hourly data
+create_ts <- function(temp_df)
+{
+  pickup_data = temp_df %>% group_by(datetime) %>% summarise(pickups = n())
+  new_df = aggregate(pickup_data$pickups ~ cut(pickup_data$datetime,"30 min"),pickup_data,sum)
+  return(new_df)
+
+}
+
+for(i in 1:4)
+{
+  print(i)
+  name <- paste("df_ts", i, sep = "_")
+  assign(name, as.data.frame(create_ts(df_list[[i]])))
+}
+
+gc()
+
+
+pickup_data = dat %>% group_by(tpep_pickup_datetime) %>% summarise(pickups = n())
+pickup_data
+str(pickup_data)
+gc()
+pickup_data$tpep_pickup_datetime = ymd_hms(pickup_data$tpep_pickup_datetime)
+gc()
+temp_df_2 = aggregate(pickup_data$pickups ~ cut(pickup_data$tpep_pickup_datetime,"30 min"),pickup_data,sum)
+
+```
+
+
+
+```{r}
+# rename columns of each time series df
+df_list = NULL
+df_list = list(df_ts_1,df_ts_2,df_ts_3,df_ts_4)
+
+
+
+change_colname <- function(temp_df)
+{
+  colnames(temp_df) <- c("date_time","pickups")
+  return(temp_df)
+}
+
+for(i in 1:4)
+{
+  print(i)
+  name <- paste("df_ts", i, sep = "_")
+  assign(name, as.data.frame(change_colname(df_list[[i]])))
+}
+
+df_ts_1
+gc()
+
+
+dEOG = df_1 = df_2 = df_3 = df_4 = NULL
+
+```
+
+
+```{r}
+
+# working on weekly seasonality
+library(forecast)
+count_ma = msts(df_ts_1$pickups,seasonal.periods = c(336))
+#count_ma
+decomp = stl(count_ma, s.window = "periodic")
+deseasonal_cnt <- seasadj(decomp)
+plot(decomp)
+#plot(deseasonal_cnt)
+
+
+decomp$time.series[1]
+decomp$time.series[1,3]
+
+# seasonality
+plot(decomp$time.series[1:8000,1])
+# trend
+plot(decomp$time.series[1:8000,2])
+# random
+plot(decomp$time.series[1:8000,3])
+```
+
+
+
+```{r}
+####################### ACF and PACF graphs for daily and weekly seasonality ###########################
+gc()
+train = msts(df_ts_1$pickups[1:8016],seasonal.periods = c(336))
+test = msts(df_ts_1$pickups[8017:8688],seasonal.periods = c(336))
+```
+
+
+
+
+```{r}
+require(data.table)
+install.packages("TSA")
+require(TSA)
+require(forecast)
+  ndiffs(df_ts_1$pickups)
+p <- periodogram(df_ts_1$pickups)
+data.table(period=1/p$freq, spec=p$spec)[order(-spec)][1:2]
+```
+
+
+```{r}
+train_set = ts(df_ts_1$pickups[1:6048])
+test_set = ts(df_ts_1$pickups[6049:6720])
+
+############ dickey fuller test shows that time series is stationary
+adf.test(train_set, alternative = "stationary")
+
+################## Kwiatkowski-Phillips-Schmidt-Shin ####################3
+### this also indicates that time series is stationary
+kpss.test(train_set)
+
+
+```
+
+
+
+```{r}
+####################################### Look for daily seasonality ########################
+
+diff48 = diff(train_set,48)
+plot(diff48)
+
+Acf(diff48)
+
+diff_48_1 = diff(diff48,1)
+# use this for non seasonal q (MA) term
+acf(diff_48_1)
+# use this for seasonal q (MA) term
+acf(diff_48_1,lag.max = 10*48)
+
+# use this for non seasonal p (AR) term
+pacf(diff_48_1)
+
+
+pacf(diff_48_1)
+
+############## check seasonality in differenced series
+plot(diff48)
+
+```
+
+
+
+```{r}
+
+
+########################################## multiplicative Model ###############################################33
+MAPE_list = list()
+for(i in 0:9)
+{
+  for(j in 0:9)
+  {
+    for(k in 0:9)
+    {
+      
+      hw_model = HoltWinters(train,seasonal = "multiplicative",start.periods = 336,optim.start = c(i/10,j/10,k/10))
+      #hw_model = HoltWinters(count_ma, seasonal = "mult",optim.start = c(.3,.1,.1))
+      #plot(hw_model)
+      forecast <- predict(hw_model, n.ahead = 336, prediction.interval = T, level = 0.95)
+      #plot(hw_model, forecast)
+      result_comp = as.data.frame(cbind(forecast[,1],df_ts_1$pickups[6049:6384])) 
+      colnames(result_comp) = c("forecast","actual")
+      result_comp$diff = abs(result_comp$forecast - result_comp$actual)
+      MAPE_mult = sum(result_comp$diff)/sum(result_comp$actual) * 100 
+      list_index = i*100 + j*10 + (k+1)
+      print(list_index)
+      MAPE_list[[list_index]] = MAPE_mult
+    }
+  }
+}
+
+min_val = 1000
+pos = 0
+for(i in 1:1000)
+{
+  if(MAPE_list[[i]] < min_val)
+  {
+    min_val = MAPE_list[[i]]
+    pos = i
+  }
+}
+
+
+
+hw_model = HoltWinters(train,seasonal = "multiplicative",start.periods = 336,optim.start = c(0.6,0.1,0.5))
+hw_model = HoltWinters(train,seasonal = "multiplicative",start.periods = 336)
+      #hw_model = HoltWinters(count_ma, seasonal = "mult",optim.start = c(.3,.1,.1))
+      #plot(hw_model)
+      forecast <- predict(hw_model, n.ahead = 672, prediction.interval = T, level = 0.95)
+      forecast <- predict(hw_model, n.ahead = 336, prediction.interval = T, level = 0.95)
+      plot(hw_model, forecast)
+      result_comp = as.data.frame(cbind(forecast[,1],df_ts_1$pickups[8017:8352])) 
+      colnames(result_comp) = c("forecast","actual")
+      result_comp$diff = abs(result_comp$forecast - result_comp$actual)
+      MAPE_mult = sum(result_comp$diff)/sum(result_comp$actual) * 100 
+MAPE_mult
+
+
+
+########################################## HW additive Model ###############################################
+
+hw_model = HoltWinters(train,seasonal = "additive",start.periods = 336)
+#hw_model = HoltWinters(count_ma, seasonal = "mult",optim.start = c(.3,.1,.1))
+hw_model$alpha
+hw_model$beta
+hw_model$gamma
+
+plot(hw_model)
+forecast <- predict(hw_model, n.ahead = 336, prediction.interval = T, level = 0.95)
+plot(hw_model, forecast)
+
+result_comp = as.data.frame(cbind(forecast[,1],df_ts_1$pickups[6049:6384])) 
+colnames(result_comp) = c("forecast","actual")
+result_comp$diff = abs(result_comp$forecast - result_comp$actual)
+
+MAPE_add = sum(result_comp$diff)/sum(result_comp$actual) * 100 
+print(MAPE_add)
+
+plot(result_comp$diff,type = "l")
+
+####################################################### TBATS Model #############################################
+
+gc()
+train_tbat = msts(df_ts_1$pickups[1:6048],seasonal.periods = c(24,48,336))
+test_tbat = msts(df_ts_1$pickups[6049:6720],seasonal.periods = c(24,48,336))
+
+
+tbat_model = tbats(train_tbat,seasonal.periods = c(24,48,336))
+
+tbat_forecast = forecast(tbat_model)
+plot(tbat_forecast$mean)
+result_comp_tabt = as.data.frame(cbind(tbat_forecast$mean,df_ts_1$pickups[6049:6720])) 
+colnames(result_comp_tabt) = c("forecast","actual")
+result_comp_tabt$diff = abs(result_comp_tabt$forecast - result_comp_tabt$actual)
+
+result_comp_tabt
+MAPE_mult = sum(result_comp_tabt$diff)/sum(result_comp_tabt$actual) * 100 
+print(MAPE_mult)
+
+
+################################################### ARIMA with Fourier terms ############################
+gc()
+train = msts(df_ts_1$pickups[1:6048],seasonal.periods = c(336))
+test = msts(df_ts_1$pickups[6049:6720],seasonal.periods = c(336))
+
+aic_vals_temp = NULL
+aic_vals <- NULL
+
+
+# min aic is for j = 1
+  for(j in 1:5)
+  {
+    xreg1 <- fourier(train,K=c(j))
+    fitma <- auto.arima(train,D=0,max.P = 0,max.Q = 0,xreg = xreg1)
+    print(fitma$aic)
+  }
+
+# arima with mo seasonal component
+fitma_noreg <- auto.arima(train)
+gc()
+
+colnames(aic_vals) <- c("fourier_terms_48","fourier_terms_336","AIC_Value")
+aic_vals <- data.frame(aic_vals)
+minAICVal <- min(aic_vals$AIC_Value)
+minvals <- aic_vals[which(aic_vals$AICValue == minAICVal),]
+minAICVal
+minAICVal
+minvals
+aic_vals
+
+xreg1 <- fourier(train,K=c(5,1))
+fitma <- auto.arima(train,D=0,max.P = 0,max.Q = 0,xreg = xreg1)
+fitma$coef
+
+
+forecast_arima = forecast::forecast(fitma_noreg,h=48)
+
+plot(forecast_arima)
+
+forecast_arima$mean
+
+result_comp = as.data.frame(cbind(forecast_arima$mean,df_ts_1$pickups[6049:6096])) 
+colnames(result_comp) = c("forecast","actual")
+result_comp$diff = abs(result_comp$forecast - result_comp$actual)
+
+
+MAPE_mult = sum(result_comp$diff)/sum(result_comp$actual) * 100 
+print(MAPE_mult)
+
+#############################################
+# seasonal arima forecsat
+xreg1 = fourier(train,2)
+fitma <- auto.arima(train,xreg = xreg1)
+forecast_arima = forecast::forecast(fitma,xreg=xreg1,h=48)
+
+result_comp = as.data.frame(cbind(forecast_arima$mean,df_ts_1$pickups[1:6048])) 
+colnames(result_comp) = c("forecast","actual")
+result_comp$diff = abs(result_comp$forecast - result_comp$actual)
+
+
+MAPE_mult = sum(result_comp$diff)/sum(result_comp$actual) * 100 
+print(MAPE_mult)
+gc()
+
+result_comp
+
+
+################## arima with fourier terms #####################
+bestfit = list()
+y = ts(df_ts_1$pickups[1:6048], frequency = 48)
+for(i in 1:5)
+{
+    
+    z1 <- fourier(y,K=i)
+    fit <- auto.arima(y, xreg=z1, seasonal=F)
+    if(i == 1)
+    {
+      bestfit <- list(aicc=fit$aicc, i=i, fit=fit)
+    }
+    if(fit$aicc < bestfit$aicc)
+    {
+      bestfit <- list(aicc=fit$aicc, i=i, fit=fit)
+    }
+  
+}
+
+bestfit$fit
+fc <- forecast(bestfit$fit, xreg=fourier(y,K=bestfit$i), h=48)
+
+
+
+result_comp = as.data.frame(cbind(fc$mean[1:48],df_ts_1$pickups[6049:6096])) 
+colnames(result_comp) = c("forecast","actual")
+result_comp$diff = abs(result_comp$forecast - result_comp$actual)
+
+
+MAPE_mult = sum(result_comp$diff)/sum(result_comp$actual) * 100 
+print(MAPE_mult)
+gc()
+
+############################### arima with fourier terms n = 336 ################
+bestfit = list()
+y = ts(df_ts_1$pickups[1:6048], frequency = 336)
+for(i in 1:5)
+{
+    
+    z1 <- fourier(y,K=i)
+    fit <- auto.arima(y, xreg=z1, seasonal=F)
+    if(i == 1)
+    {
+      bestfit <- list(aicc=fit$aicc, i=i, fit=fit)
+    }
+    if(fit$aicc < bestfit$aicc)
+    {
+      bestfit <- list(aicc=fit$aicc, i=i, fit=fit)
+    }
+  
+}
+
+z1 <- fourier(y,K=4)
+fit <- auto.arima(y, xreg=z1, seasonal=F)
+bestfit
+fc <- forecast(bestfit$fit, xreg=fourier(y,K=bestfit$i), h=336)
+fc <- forecast(fit, xreg=fourier(y,K=4), h=48)
+
+
+result_comp = as.data.frame(cbind(fc$mean[1:48],df_ts_1$pickups[6049:6096])) 
+colnames(result_comp) = c("forecast","actual")
+result_comp$diff = abs(result_comp$forecast - result_comp$actual)
+
+
+MAPE_mult = sum(result_comp$diff)/sum(result_comp$actual) * 100 
+print(MAPE_mult)
+gc()
+
+result_comp
+
+############################### arima with fourier terms n = 336 & n = 48 ################
+bestfit = list()
+y1 = ts(df_ts_1$pickups[1:6048], frequency = 48)
+y2 = ts(df_ts_1$pickups[1:6048], frequency = 336)
+for(i in 1:5)
+{
+  for(j in 1:5)
+  {
+    z1 <- fourier(y1,K=i)
+    z2 <- fourier(y2,K=j)
+    fit <- auto.arima(y, xreg=cbind(z1,z2), seasonal=F)
+    if(i == 1 & j == 1)
+    {
+      bestfit <- list(aicc=fit$aicc, i=i, fit=fit)
+    }
+    if(fit$aicc < bestfit$aicc)
+    {
+      bestfit <- list(aicc=fit$aicc, i=i, fit=fit)
+    }
+  }
+  
+}
+
+bestfit
+z1 <- fourier(y1,K=5)
+z2 <- fourier(y2,K=1)
+fc <- forecast(bestfit$fit, xreg=cbind(z1,z2), h=336)
+plot(fc)
+
+
+result_comp = as.data.frame(cbind(fc$mean[1:336],df_ts_1$pickups[6049:6384])) 
+colnames(result_comp) = c("forecast","actual")
+result_comp$diff = abs(result_comp$forecast - result_comp$actual)
+
+
+MAPE_mult = sum(result_comp$diff)/sum(result_comp$actual) * 100 
+print(MAPE_mult)
+gc()
+
+
+result_comp = as.data.frame(cbind(fc$mean[1:48],df_ts_1$pickups[6049:6096])) 
+colnames(result_comp) = c("forecast","actual")
+result_comp$diff = abs(result_comp$forecast - result_comp$actual)
+
+
+MAPE_mult = sum(result_comp$diff)/sum(result_comp$actual) * 100 
+print(MAPE_mult)
+gc()
+result_comp
+
+
+gc()
+
+
+write.csv(df_ts_1,"D:/GL_Capstone_Proj/frist_dataset.csv")
+
+```
+
+
+
+
+```{r}
+# detect seasonality in data using periodogram
+p <- periodogram(df_ts_1$pickups[1:8016])
+data.table(period=1/p$freq, spec=p$spec)[order(-spec)][1:2]
+```
+
+
+
+
+
+
+```{r}
+gc()
+train_24 = msts(df_ts_1$pickups[1:8016],seasonal.periods = c(48))
+test_24 = msts(df_ts_1$pickups[8017:8688],seasonal.periods = c(48))
+
+hw_model = HoltWinters(train,seasonal = "multiplicative",start.periods = 48)
+      #hw_model = HoltWinters(count_ma, seasonal = "mult",optim.start = c(.3,.1,.1))
+      #plot(hw_model)
+      forecast <- predict(hw_model, n.ahead = 672, prediction.interval = T, level = 0.95)
+      plot(hw_model, forecast)
+      result_comp = as.data.frame(cbind(forecast[,1],df_ts_1$pickups[8017:8688])) 
+      colnames(result_comp) = c("forecast","actual")
+      result_comp$diff = abs(result_comp$forecast - result_comp$actual)
+      MAPE_mult = sum(result_comp$diff)/sum(result_comp$actual) * 100 
+MAPE_mult
+hw_model$alpha
+hw_model$beta
+hw_model$gamma
+
+gc()
+
+hw_model = HoltWinters(train,seasonal = "additive",start.periods = 48)
+      #hw_model = HoltWinters(count_ma, seasonal = "mult",optim.start = c(.3,.1,.1))
+      #plot(hw_model)
+      forecast <- predict(hw_model, n.ahead = 672, prediction.interval = T, level = 0.95)
+      plot(hw_model, forecast)
+      result_comp = as.data.frame(cbind(forecast[,1],df_ts_1$pickups[6049:6144])) 
+      colnames(result_comp) = c("forecast","actual")
+      result_comp$diff = abs(result_comp$forecast - result_comp$actual)
+      MAPE_mult = sum(result_comp$diff)/sum(result_comp$actual) * 100 
+MAPE_mult
+hw_model$alpha
+hw_model$beta
+hw_model$gamma
+
+
+
+
+```
+
+
+```{r}
+##################################################################################################################
+ #                     Decision tree and other type of Models
+##################################################################################################################
+```
+
+
+```{r}
+df_ts_1 = read.csv("D:/GL_Capstone_Proj/first_time_series.csv")
+df_ts_2 = read.csv("D:/GL_Capstone_Proj/second_time_series.csv")
+df_ts_3 = read.csv("D:/GL_Capstone_Proj/third_time_series.csv")
+df_ts_4 = read.csv("D:/GL_Capstone_Proj/fourth_time_series.csv")
+
+
+str(df_ts_1)
+```
+
+
+
+```{r}
+library(stringr)
+library(lubridate)
+dat = NULL
+?str_split_fixed
+df_ts_4 = df_ts_4[,c(2,3)]
+
+
+colnames(df_ts_4) = c("date_time","pickups")
+df_ts_4
+str(df_ts_4)
+
+df_ts_4$date_time = mdy_hm(as.character(df_ts_4$date_time))
+df_ts_4$hour = hour(df_ts_4$date_time)
+df_ts_4$min = minute(df_ts_4$date_time)
+df_ts_4$day_date = ymd(str_split_fixed(df_ts_4$date_time," ",2)[,1])
+
+str(df_ts_4)
+
+
+
+gc()
+hourly_weather_data = read.csv("D:/GL_Capstone_Proj/Hourly_Weather_Data_for_model.csv")
+str(hourly_weather_data)
+#hourly_weather_data$Date = as.character(hourly_weather_data$Date)
+#hourly_weather_data$Time..EST. = as.character(hourly_weather_data$Time..EST.)
+
+hourly_weather_data$Day_date = mdy(hourly_weather_data$Day_date)
+
+#hourly_weather_data = hourly_weather_data %>% distinct(Date,Hour_of_day, .keep_all = TRUE)
+
+#hourly_weather_data$Day_date = mdy(hourly_weather_data$Date)
+
+#hourly_weather_data$Day_date = round_date(hourly_weather_data$Date_1 ,"day")
+
+str(hourly_weather_data)
+hourly_weather_data
+
+#write.csv(hourly_weather_data,"D:/GL_Capstone_Proj/Hourly_Weather_Data_for_model.csv")
+
+str(df_ts_4)
+```
+
+
+```{r}
+
+library(dplyr)
+library(tidyr)
+
+str(df_ts_4)
+gc()
+
+
+colnames(df_ts_4) = c("date_time","pickups","Hour_of_day","min","Day_date")
+str(df_ts_4)
+str(hourly_weather_data)
+hourly_weather_data
+
+
+#df_ts_4 = df_ts_4[,c(1:5)]
+#hourly_weather_data$Day_date = mdy(as.character(hourly_weather_data$Day_date))
+
+df_ts_4 = merge(df_ts_4,hourly_weather_data,by=c("Hour_of_day","Day_date"),all.x = TRUE)
+df_ts_4
+str(df_ts_4)
+
+
+#temp_df1 = nrow(df_ts_4 %>% group_by(date_time) %>% filter( row_number() == 1))
+
+#df_ts_4$Date_time = ymd_hms(paste(df_ts_4$Day_date,df_ts_4$Day_time))
+#df_ts_4
+df_ts_4 <- df_ts_4 %>% arrange(date_time)
+df_ts_4
+#write.csv(df_ts_4,"D:/GL_Capstone_Proj/first_complete_dataset.csv")
+
+#new_ts <- read.csv("D:/GL_Capstone_Proj/first_complete_dataset.csv")
+#new_ts[is.na(new_ts$Week),]
+
+#df_ts_4 = new_ts
+gc()
+
+plot(df_ts_4$Hour_of_day,df_ts_4$pickups)
+
+new_ts
+gc()
+
+df_ts_4 = df_ts_4[!is.na(df_ts_4$Temp.),]
+#df_ts_4 = df_ts_4 %>% arrange(date_time)
+
+df_ts_4
+
+
+```
+
+
+
+```{r}
+weekly_pickup_series = df_ts_4 %>% group_by(Week) %>% summarise(weekly_pickups = sum(pickups))
+plot(weekly_pickup_series$Week,weekly_pickup_series$weekly_pickups)
+```
+
+```{r}
+
+daily_trend = df_ts_4 %>% group_by(Week,Day_of_week) %>% summarise(daily_pickups = sum(pickups))
+daily_trend
+
+plot(daily_trend$daily_pickups, type = "l")
+daily_trend
+df_ts_4[is.na(df_ts_4$Week),]
+boxplot(df_ts_4$pickups)
+
+daily_trend <- df_ts_4 %>% group_by(Day_of_week) %>% summarise(avg_pickups = mean(pickups, na.rm = TRUE))
+daily_trend
+plot(daily_trend,type="l")
+
+str(df_ts_4)
+```
+
+
+
+```{r}
+
+str(df_ts_4)
+
+#jan1,jan19,feb12,feb16,may25
+#df_ts_4$Day_date = mdy(as.character(df_ts_4$Day_date))
+
+df_ts_4$one_week_lag_pickups = df_ts_4$pickups
+df_ts_4$one_week_lag_pickups[1:336] <- 0
+df_ts_4
+df_ts_4$one_week_lag_pickups[337:8400] = df_ts_4$pickups[1:8064]
+#write.csv(df_ts_4,"d:/GL_Capstone_Proj/capstone_ts_data.csv")
+df_ts_4 = df_ts_4[337:8400,]
+#df_ts_4 = df_ts_4[1:8064,]
+
+df_ts_4$isholiday = ifelse(df_ts_4$Day_date == ymd("2015-01-01") | df_ts_4$Day_date == ymd("2015-01-19") | df_ts_4$Day_date == ymd("2015-02-12") | df_ts_4$Day_date == ymd("2015-02-16") | df_ts_4$Day_date == ymd("2015-05-25") ,1,0)
+
+
+#df_ts_4[df_ts_4$isholiday == 1,]
+#df_ts_4[is.na(df_ts_4$Week),]
+
+#tail(df_ts_4)
+
+df_ts_4
+```
+
+
+```{r}
+
+df_ts_4 %>% group_by(Conditions) %>% summarise(count = n()) %>% arrange(desc(count))
+
+str(df_ts_4)
+df_ts_4$Conditions = as.character(df_ts_4$Conditions)
+
+df_ts_4$Conditions = ifelse(df_ts_4$Conditions == "Mostly Cloudy","Overcast",df_ts_4$Conditions)
+df_ts_4$Conditions = ifelse(df_ts_4$Conditions == "Scattered Clouds","Partly Cloudy",df_ts_4$Conditions)
+df_ts_4$Conditions = ifelse(df_ts_4$Conditions == "Light Freezing Drizzle","Light Rain",df_ts_4$Conditions)
+df_ts_4$Conditions = ifelse(df_ts_4$Conditions == "Light Thunderstorms and Rain","Light Rain",df_ts_4$Conditions)
+df_ts_4$Conditions = ifelse(df_ts_4$Conditions == "Heavy Rain","Rain",df_ts_4$Conditions)
+df_ts_4$Conditions = ifelse(df_ts_4$Conditions == "Haze" | df_ts_4$Conditions == "Mist","Fog",df_ts_4$Conditions)
+df_ts_4$Conditions = ifelse(df_ts_4$Conditions == "Light Snow" | df_ts_4$Conditions == "Light Ice Pellets","Snow",df_ts_4$Conditions)
+df_ts_4$Conditions = ifelse(df_ts_4$Conditions == "Thunderstorm" | df_ts_4$Conditions == "Thunderstorms and Rain","Rain",df_ts_4$Conditions)
+df_ts_4$Conditions = ifelse(df_ts_4$Conditions == "Light Drizzle" | df_ts_4$Conditions == "Light Freezing Rain","Light Rain",df_ts_4$Conditions)
+
+
+
+df_ts_4$Conditions = as.factor(df_ts_4$Conditions)
+
+
+df_ts_4$isholiday = as.factor(df_ts_4$isholiday)
+df_ts_4$hour_min = as.factor(paste(df_ts_4$Hour_of_day,df_ts_4$min,sep = "-"))
+df_ts_4
+
+
+df_ts_4$Temp. = as.character(df_ts_4$Temp.)
+df_ts_4$Temp. = as.numeric(df_ts_4$Temp.)
+
+#df_ts_4[is.na(df_ts_4$Temp.),]
+
+str(df_ts_4)
+
+```
+
+
+
+```{r}
+
+
+df_ts_1 = read.csv("D:/GL_Capstone_Proj/data_with_weather_1.csv")
+df_ts_1
+df_ts_1$Day_of_week = as.factor(df_ts_1$Day_of_week)
+df_ts_1$isholiday = as.factor(df_ts_1$isholiday)
+#set.seed(123)
+#index_train <- sample(1:nrow(df_ts_4),6720)
+#install.packages("caret")
+#library(caret)
+#set.seed(987)
+#index_test <- sample(1:nrow(jan_14_data), nrow(jan_14_data)*.06)
+#df_ts_1$Day_of_week = as.factor(df_ts_1$Day_of_week)
+train_data = df_ts_1[1:7728,]
+test_data = df_ts_1[7729:8064,]
+#model = glm(no_of_pickups ~ time + day + isholiday + no_drops_adj + high + low + Precipitation + Weather, data = train_data, family = binomial(link = "logit"))
+train_data
+library(party)
+# load libraries
+library(caret)
+library(rpart)
+
+# define training control
+
+model_rpart = rpart(pickups ~ hour_min + Temp.+ Visibility + Precip + Conditions + Day_of_week + isholiday + one_week_lag_pickups, data = train_data)
+
+plotcp(model_rpart)
+printcp(model_rpart)
+
+pfit<- prune(model_rpart, cp=0.01149) # from cptable 
+
+pred = predict(model_rpart,test_data)
+pred
+
+result = as.data.frame(cbind(test_data$pickups,pred))
+result$diff = abs(result$V1 - result$pred)
+
+
+mean(result$diff)/mean(result$pickups) * 100
+
+mean(result$diff/result$V1)
+
+plot(result$V1,result$pickups,type="l")
+test_data
+
+
+str(train_data)
+gc()
+?ctree
+model = ctree(pickups ~ hour_min + Temp.+ Visibility + Precip + Conditions + Day_of_week + isholiday + one_week_lag_pickups, data = train_data)
+
+
+pred = predict(model,test_data)
+pred
+
+result = as.data.frame(cbind(test_data$pickups,pred))
+result$diff = abs(result$V1 - result$pickups)
+
+
+mean(result$diff)/mean(result$pickups) * 100
+
+mean(result$diff/result$pickups)
+
+plot(result$V1,result$pickups,type="l")
+test_data
+
+
+############ Conditional Infrenece Forest #############################
+
+df_ts_3 = read.csv("D:/GL_Capstone_Proj/data_with_weather_3.csv")
+df_ts_3
+df_ts_3$Day_of_week = as.factor(df_ts_3$Day_of_week)
+df_ts_3$isholiday = as.factor(df_ts_3$isholiday)
+train_data = df_ts_3[1:7728,]
+test_data = df_ts_3[7729:8064,]
+?cforest
+
+model = cforest(pickups ~ hour_min + Temp.+ Visibility + Precip + Conditions + Day_of_week + isholiday + one_week_lag_pickups, data = train_data)
+summary(model)
+
+pred = predict(model,test_data, OOB = TRUE, type="response")
+
+pred
+
+result = as.data.frame(cbind(test_data$pickups,pred))
+result
+result$diff = abs(result$V1 - result$pickups)
+
+
+mean(result$diff)/mean(result$pickups) * 100
+
+mean(result$diff/result$pickups)
+
+write.csv(result,"D:/GL_Capstone_Proj/conditional_rf_ts_3.csv")
+
+gc()
+```
+
+
+
+```{r}
+#install.packages("randomForest")
+library(randomForest)
+?randomForest
+rf_model = randomForest(pickups ~ hour_min + Temp.+ Visibility + Precip + Conditions + Day_of_week + isholiday + one_week_lag_pickups, data = train_data, ntree = 500)
+print(rf_model)
+?randomForest
+
+
+importance(rf_model)
+plot(rf_model)
+
+
+pred_rf = predict(rf_model,test_data)
+pred_rf
+
+result_rf = as.data.frame(cbind(test_data$pickups,pred_rf))
+result_rf
+result_rf$diff = abs(result_rf$V1 - result_rf$pred_rf)
+
+mean(result_rf$diff/result_rf$V1)
+
+mean(result_rf$diff)/mean(result$V1) * 100
+mean(abs(result_rf$V1 - result_rf$pred_rf)/result_rf$V1)
+
+total_error = (sum(result_rf$V1) - sum(result_rf$pred_rf))/sum(result_rf$V1) * 100
+total_error
+plot(result_rf$pred_rf, type = "l", col="red")
+plot.new()
+lines(result_rf$V1,col="green")
+
+plot()
+
+library(ggplot2)
+
+result_rf = as.data.frame(cbind(test_data$strt_time,test_data$no_of_pickups, pred_rf))
+result_rf
+
+ggplot(result_rf, aes(result_rf$V1)) +              # basic graphical object
+  geom_line(aes(y=result_rf$V2), colour="red") +  # first layer
+  geom_line(aes(y=result_rf$pred_rf), colour="green")  # second layer
+
+
+x  <- seq(-2, 2, 0.05)
+y1 <- pnorm(x)
+y2 <- pnorm(x,1,1)
+plot(x,y1,type="l",col="red")
+par(new=TRUE)
+plot( x, y2, type="l", col="green" )
+
+
+
+write.csv(df_ts_1,"D:/GL_Capstone_Proj/capstone_project_data_1.csv")
+plot()
+```
+
+
+```{r}
+
+# linear regression 
+
+glm_model = lm(pickups ~ hour_min + Temp.+ Visibility + Precip + Conditions + Day_of_week + isholiday + one_week_lag_pickups, data = train_data)
+summary(glm_model)
+pred_glm = predict(glm_model,test_data)
+pred_glm
+
+result_glm = as.data.frame(cbind(test_data$pickups,pred_glm))
+mean(abs(result_glm$V1 - result_glm$pred_glm)/result_glm$V1)
+
+```
+
+
+
+```{r}
+write.csv(result,"D:/GL_Capstone_Proj/decision_tree_ts_2_result.csv")
+write.csv(result_rf,"D:/GL_Capstone_Proj/random_forest_ts_2_result.csv")
+write.csv(result_glm,"D:/GL_Capstone_Proj/glm_ts_2_result.csv")
+
+gc()
+```
+
+
+
+```{r}
+############################ decision tree using c5.0 ######################
+install.packages("C50")
+library(C50)
+str(train_data)
+X_c50 = df_ts_1[,c(10,11,12,13,14,15,16,17)]
+Y_c50 = df_ts_1[,c(5)]
+
+trainX_c50 = X_c50[1:7228,]
+trainY_c50 = Y_c50[1:7228]
+
+testX_c50 = X_c50[7229:8064,]
+testY_c50 = Y_c50[7229:8064]
+
+
+c50_model = C5.0(trainX_c50, trainY_c50)
+gc()
+```
+
+
+
