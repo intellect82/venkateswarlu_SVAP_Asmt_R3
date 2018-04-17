@@ -1,0 +1,158 @@
+\documentclass[10pt, reqno]{amsart}
+\usepackage{amsthm, amsmath}
+\usepackage[]{algorithm2e}
+%\usepackage{marginnote}
+%\usepackage{algorithm}
+%\usepackage[noend]{algpseudocode}
+\usepackage{todonotes}
+\newtheorem{mydef}{Definition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
+\newtheorem{remark}{Remark}
+
+
+
+\title[Taxi demand forecast]{{Taxi demand prediction using big data analytical techniques} \footnote{\hfill \today}}
+
+%\author{D. Narayana \and K.S. Mallikarjuna Rao}
+\begin{document}
+
+\maketitle
+
+\vspace{0.5cm}
+
+\begin{abstract}
+This empirical paper compares the accuracy of six univariate methods for short-term taxi demand forecasting for lead times up to a week-ahead. The methods are compared using a time series of half hourly demand for New York.
+\end{abstract}
+
+Tentative plan:
+\begin{itemize}
+\item Introduction
+\item Exploratory Data Analysis
+\item Data Preparation
+\item Time Series Models
+\begin{itemize}
+\item Holt-Winters seasonal method
+\end{itemize}
+\item Supervised Learning Models
+\begin{itemize}
+\item Linear Regression
+\item Conditional Inference Decision Tree
+\item Random Forest
+\item XG Boost
+\end{itemize}
+\item Deep Learning Model - LSTM
+\item Conclusions 
+\end{itemize}
+
+\section{Introduction}
+
+Taxi-supply planning requires efficient management of existing taxis and optimization of the decisions concerning additional capacity. Demand prediction is an important aspect in the development of any model for taxi planning. The form of the demand depends on the type of planning and accuracy that is required; hence it can be represented as an annual demand, a peak demand or demand like daily, weekly etc. Short-term demand forecasts are required for the control and scheduling of taxis. The focus varies from minutes to several hours ahead. The predictions can help in optimizing taxi supply at a given location and time. 
+
+In the short run, the taxi demand is mainly influenced by seasonal effects (daily and weekly cycles, calendar holidays) and special events. Weather related variation is certainly critical in predicting taxi demand for lead times beyond a day ahead. In this paper, we compare the accuracy of simple benchmarks and four more sophisticated methods. We evaluate the methods using 24 weeks data for the New York city. We consider lead times up to a week ahead.
+
+Refer to \cite{Nery1} for a detailed about World of Warcraft game. 
+
+
+\todo[fancyline,color=green]{Keep your comments or questions like this}
+
+
+\subsection{Sample algo1}
+
+Calculate the following probabilities:
+
+\begin{algorithm}[H] \label{TrainAlgo1}
+ \KwData{5 seconds sampled order book data}
+ \KwResult{States Table with probabilities }
+ Initialization \;
+ 
+ \begin{itemize}
+ \item[1.] Get state $\hat{S} = (\hat{s}_1, \hat{s}_2, \hat{s}_3, \hat{s}_4, \hat{s}_5)$  at time time t\;
+ \item[2.] Run K-means clustering and find relevant cluster for $\hat{S}$. Let us call this cluster as $S(t)$ \;
+ \item[3.] Update counter for $S(t)$
+ \item[4.] If $P_t > P_{t+\delta} + \mbox{ 5 basis points} $, update upCounter for $S(t)$\;
+ \item[5.] If $P_t > P_{t+\delta} + \mbox{ 5 basis points} $, update downCounter for $S(t)$\;
+ \item[6.] Calculate upProbability and downProbability for $S(t)$ \;
+ \item[7.] Prepare state table with probabilities 
+ \end{itemize}
+
+ \caption{State Calculation Train Algorithm}
+\end{algorithm}
+
+
+\subsection{Sample table}
+
+\begin{center}
+\begin{tabular}{|c|c|c|}  \hline
+State &  upProbability & downProbability   \\ \hline 
+$S_1$ &  &    \\ \hline
+$S_2$ &  &    \\ \hline
+\vdots &  &    \\ \hline
+$S_{24}$ &  &    \\ \hline
+\end{tabular}
+\end{center}
+
+
+\subsection{Sample algo2}
+
+Sample algorithm
+
+\begin{algorithm}[H] \label{TrainAlgo1}
+ \KwData{5 seconds sampled order book data}
+ \KwResult{Buy, sell and hold signal }
+ Initialization \;
+ 
+ \begin{itemize}
+ \item[1.] Get state $\hat{S} = (\hat{s}_1, \hat{s}_2, \hat{s}_3, \hat{s}_4, \hat{s}_5)$  at time time t\;
+ \item[2.] Run K-means clustering and find relevant cluster for $\hat{S}$. Let us call this cluster as $S(t)$ \;
+ \item[3.] Look at the state table for respective upProbability and downProbability 
+ \end{itemize}
+ \While{$presentTime > 9.25$ and $presentTime < 15.20$}{
+  read current\;
+  \uIf{$(upProbability > 0.7)  \& (inventory == 0)$}{
+		tradingSignal = Buy \;
+   		inventory = 1\;
+   }
+   \uElseIf{$(downProbability > 0.7)  \& (inventory == 0)$}
+   {
+   		tradingSignal = Sell \;
+   		inventory = -1\;
+   }
+   \uElseIf{$(downProbability > 0.4)  \& (inventory == 1)$}
+   {
+   		tradingSignal = Sell \;
+   		inventory = -1\;
+   } 
+   \uElseIf{$(upProbability > 0.4)  \& (inventory == -1)$}
+   {
+   		tradingSignal = Sell \;
+   		inventory = -1\;
+   }
+	\uElse
+   {
+   		tradingSignal = Hold \;
+   		Move to the next 5 seconds time step 
+   } 
+ }
+
+ \caption{State Calculation Train Algorithm}
+\end{algorithm}
+
+
+
+\subsection{Conclusions}
+
+
+
+\begin{thebibliography}{99}
+
+\bibitem{Nery1} Marcelo Souza Nery, Victor do Nascimento Silva, Roque Anderson S. Teixeira and Adriano Alonso Veloso \textit{Setting Players’ Behaviors in World of Warcraft through Semi-Supervised Learning}.
+
+%\bibitem{Aoud1} S. El Aoud and F. Abergel \textit{A stochastic control approach to option market making}, 
+%Maket Microstructure and Liquidity Vol. 1, No.1 (2015).
+
+\end{thebibliography}
+
+
+\end{document}
